@@ -12,8 +12,65 @@ namespace esphome
 {
   namespace hvxxx
   {
-
     static const char *const TAG = "hvxxx";
+
+    void HVxxxOffsetNumber::setup()
+    {
+      if (this->f_.has_value())
+        return;
+
+      float value;
+      if (!this->restore_value_)
+      {
+        value = this->initial_value_;
+      }
+      else
+      {
+        this->pref_ = global_preferences->make_preference<float>(this->get_preference_hash());
+        if (!this->pref_.load(&value))
+        {
+          if (!std::isnan(this->initial_value_))
+          {
+            value = this->initial_value_;
+          }
+          else
+          {
+            value = this->traits.get_min_value();
+          }
+        }
+      }
+      this->publish_state(value);
+    }
+
+    void HVxxxOffsetNumber::update()
+    {
+      if (!this->f_.has_value())
+        return;
+
+      auto val = (*this->f_)();
+      if (!val.has_value())
+        return;
+
+      this->publish_state(*val);
+    }
+
+    void HVxxxOffsetNumber::control(float value)
+    {
+      this->set_trigger_->trigger(value);
+
+      if (this->optimistic_)
+        this->publish_state(value);
+
+      if (this->restore_value_)
+        this->pref_.save(&value);
+    }
+    void HVxxxOffsetNumber::dump_config()
+    {
+      LOG_NUMBER("", "Offset Number", this);
+      ESP_LOGCONFIG(TAG, "  Optimistic: %s", YESNO(this->optimistic_));
+      LOG_UPDATE_INTERVAL(this);
+    }
+
 
     void HVxxxCalibrateButton::press_action()
     {
@@ -77,10 +134,10 @@ namespace esphome
         ESP_LOGCONFIG(TAG, " Serial: %s", this->serial_string_.c_str());
       }
 
-      LOG_SENSOR("  Pressure: ", this->pressure_sensor_);
-      LOG_SENSOR("  Temperature: ", this->temperature_sensor_);
-      LOG_TEXT_SENSOR("  Model text: ", this->model_text_sensor_);
-      LOG_TEXT_SENSOR(" Serial text: ", this->serial_text_sensor_);
+      LOG_SENSOR(TAG, "  Pressure: ", this->pressure_sensor_);
+      LOG_SENSOR(TAG, "  Temperature: ", this->temperature_sensor_);
+      LOG_TEXT_SENSOR(TAG, "  Model text: ", this->model_text_sensor_);
+      LOG_TEXT_SENSOR(TAG, " Serial text: ", this->serial_text_sensor_);
     }
 
     void HVxxxComponent::update()

@@ -1,7 +1,6 @@
 """
 HVxxx differential pressure sensor platform for ESPHome.
 Supports HV110, HV120, HV160, HV210 chip models from Superior SENSOR TECHNOLOGY.
-
 Features:
 - Pressure + optional temperature sensors
 - Calibration offset number (persistent)
@@ -32,6 +31,8 @@ from .sensor_parameters import (
     BANDWIDTH_MODES,
 )
 
+from .offset_number import *
+
 DEPENDENCIES = ["i2c"]
 
 AUTO_LOAD = [
@@ -40,7 +41,8 @@ AUTO_LOAD = [
     "text_sensor",
     "number",
     "button",
-    "template",  # ensure template number component headers available even if created programmatically
+    "template",
+    # "template.number",  # Use dot notation for Python module import
 ]
 
 hvxxx_ns = cg.esphome_ns.namespace("hvxxx")
@@ -50,9 +52,10 @@ HVxxxCalibrateButton = hvxxx_ns.class_(
 )
 
 # Template number class for storing calibration offset
-template_ns = cg.esphome_ns.namespace("template_")
-TemplateNumber = template_ns.class_(
-    "TemplateNumber", number.Number, cg.PollingComponent
+# template_ns = cg.esphome_ns.namespace("template_")
+# TemplateNumber = hvxxx_ns.class_("TemplateNumber", number.Number, cg.PollingComponent)
+HVxxxOffsetNumber = hvxxx_ns.class_(
+    "HVxxxOffsetNumber", HVxxxOffsetNumber, cg.PollingComponent
 )
 
 
@@ -68,7 +71,7 @@ CONF_NOTCH = "notch"
 CONF_FRIENDLY_NAME = "friendly_name"
 
 CONF_RATE_CONTROL = "rate_control"
-
+CONF_TEMPLATE_NO = "template"
 # There is no settings for refresh rate; it is derived from update interval which is set in the polling component schema.
 # REFRESH_RATE_MODES = { 111hz, 55.5hz, 37hz... etc }
 
@@ -160,46 +163,61 @@ async def to_code(config):
 
     ### PROBLEM HERE:   ERROR ID  is already registered ###
     ### I CAN REGISTER ONLY ONE OF BELOW 4 OPTIONS ###
+    # Get the base name from the component's name or the pressure sensor's name.
     base_name = config.get(CONF_NAME, config[CONF_PRESSURE]["name"])
+    # Get the main component's ID to create unique IDs for sub-entities.
+    base_id = str(config[CONF_ID])
 
-    # # Create zero-offset calibration number for long-term storage
-    # offset_schema = number.number_schema(
-    #     TemplateNumber,
-    #     unit_of_measurement=UNIT_PASCAL,
-    #     icon=ICON_GAUGE,
-    #     # class_=STATE_CLASS_MEASUREMENT,
-    #     # accuracy_decimals=2, # why doesn't this work?
-    #     device_class=DEVICE_CLASS_PRESSURE, 
-    #     # entity_category=ENTITY_CATEGORY_CONFIG
-    # )
-    # offset_conf = offset_schema({"name": f"{base_name} Calibration Offset"})
-    # offset_number_sensor = await number.new_number(
-    #     offset_conf, min_value=-2.5, max_value=2.5, step=0.01
-    # )
-    # cg.add(offset_number_sensor.set_optimistic(True))
-    # cg.add(offset_number_sensor.set_initial_value(0.0))
-    # cg.add(offset_number_sensor.set_restore_value(True))
-    # cg.add(var.set_offset_number(offset_number_sensor))
+    # Create zero-offset calibration number for long-term storage
+    offset_schema = number.number_schema(
+        HVxxxOffsetNumber,
+        unit_of_measurement=UNIT_PASCAL,
+        icon=ICON_GAUGE,
+        # class_=STATE_CLASS_MEASUREMENT,
+        # accuracy_decimals=2, # why doesn't this work?
+        device_class=DEVICE_CLASS_PRESSURE,
+        # entity_category=ENTITY_CATEGORY_CONFIG
+    )
+    offset_conf = offset_schema(
+        {
+            cv.CONF_ID: f"{base_id}_calibration_offset",
+            "name": f"{base_name} Calibration Offset",
+        }
+    )
+    offset_number_sensor = await number.new_number(
+        offset_conf, min_value=-2.5, max_value=2.5, step=0.01
+    )
+    cg.add(offset_number_sensor.set_optimistic(True))
+    cg.add(offset_number_sensor.set_initial_value(0.0))
+    cg.add(offset_number_sensor.set_restore_value(True))
+    cg.add(var.set_offset_number(offset_number_sensor))
 
-    # # Add a button to trigger zero-offset calibration -
-    # calibration_btn_schema = button.button_schema(
-    #     HVxxxCalibrateButton,
-    #     device_class=button.DEVICE_CLASS_RESTART,
-    #     entity_category=ENTITY_CATEGORY_CONFIG
-    # )
-    # calibration_btn_conf = calibration_btn_schema({"name": f"Calibrate {base_name}"})
-    # calibration_btn = await button.new_button(calibration_btn_conf)
-    # await cg.register_parented(calibration_btn, config[CONF_ID])
-    # cg.add(var.set_calibrate_button(calibration_btn))
+    # Add a button to trigger zero-offset calibration
+    calibration_btn_schema = button.button_schema(
+        HVxxxCalibrateButton,
+        device_class=button.DEVICE_CLASS_RESTART,
+        entity_category=ENTITY_CATEGORY_CONFIG,
+    )
+    calibration_btn_conf = calibration_btn_schema(
+        {
+            cv.CONF_ID: f"{base_id}_calibrate_button",
+            "name": f"Calibrate {base_name}",
+        }
+    )
+    calibration_btn = await button.new_button(calibration_btn_conf)
+    await cg.register_parented(calibration_btn, config[CONF_ID])
+    cg.add(var.set_calibrate_button(calibration_btn))
 
     # Text sensor reporting model retrieved from the device NOT defined in YAML
-    model_ts_schema = text_sensor.text_sensor_schema()
-    model_ts_conf = model_ts_schema({"name": f"{base_name} Model"})
+    model_ts_conf = text_sensor.text_sensor_schema()(
+        {cv.CONF_ID: f"{base_id}_model", "name": f"{base_name} Model"}
+    )
     model_ts = await text_sensor.new_text_sensor(model_ts_conf)
     cg.add(var.set_model_text_sensor(model_ts))
 
     # Text sensor reporting serial number retrieved from the device NOT defined in YAML
-    serial_ts_schema = text_sensor.text_sensor_schema()
-    serial_ts_conf = serial_ts_schema({"name": f"{base_name} Serial"})
+    serial_ts_conf = text_sensor.text_sensor_schema()(
+        {cv.CONF_ID: f"{base_id}_serial", "name": f"{base_name} Serial"}
+    )
     serial_ts = await text_sensor.new_text_sensor(serial_ts_conf)
     cg.add(var.set_serial_text_sensor(serial_ts))

@@ -2,20 +2,48 @@
 
 #include <string>
 
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
+#include "esphome/core/preferences.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/i2c/i2c.h"
 #include "esphome/components/button/button.h"
-#include "esphome/components/template/number/template_number.h"
+#include "esphome/components/number/number.h" 
+// #include "/offset_number/offset_number.h"  # this didn't work, even though VS Code can navigate there
 
 namespace esphome
 {
   namespace hvxxx
-  {
-    // Forward declaration
+  { 
 
     class HVxxxComponent;
+
+    class HVxxxOffsetNumber : public number::Number, public PollingComponent
+    {
+    public:
+      void set_template(std::function<optional<float>()> &&f) { this->f_ = f; }
+
+      void setup() override;
+      void update() override;
+      void dump_config() override;
+      float get_setup_priority() const override { return setup_priority::HARDWARE; }
+
+      Trigger<float> *get_set_trigger() const { return set_trigger_; }
+      void set_optimistic(bool optimistic) { optimistic_ = optimistic; }
+      void set_initial_value(float initial_value) { initial_value_ = initial_value; }
+      void set_restore_value(bool restore_value) { this->restore_value_ = restore_value; }
+
+    protected:
+      void control(float value) override;
+      bool optimistic_{false};
+      float initial_value_{NAN};
+      bool restore_value_{false};
+      Trigger<float> *set_trigger_ = new Trigger<float>();
+      optional<std::function<optional<float>()>> f_;
+
+      ESPPreferenceObject pref_;
+    };
 
     class HVxxxCalibrateButton : public button::Button, public Parented<HVxxxComponent>
     {
@@ -40,7 +68,7 @@ namespace esphome
 
       // Calibration
       //  zero offset number from TemplateNumber (persistent with restore_value=true)
-      void set_offset_number(template_::TemplateNumber *number) { offset_number_ = number; }
+      void set_offset_number(HVxxxOffsetNumber *number) { offset_number_ = number; }
       void set_calibrate_button(HVxxxCalibrateButton *button) { calibrate_button_ = button; }
 
       /// @brief Starts zero pressure offset calibration process
@@ -75,13 +103,13 @@ namespace esphome
       sensor::Sensor *temperature_sensor_{nullptr};
       text_sensor::TextSensor *model_text_sensor_{nullptr};
       text_sensor::TextSensor *serial_text_sensor_{nullptr};
-      template_::TemplateNumber *offset_number_{nullptr};
+      HVxxxOffsetNumber *offset_number_{nullptr};
       HVxxxCalibrateButton *calibrate_button_{nullptr};
 
       // Sensor settings
       uint8_t pressure_range_bits_{0};
-      bool io_watchdog_enabled_{false};   // If enabled, chipset monitors I2C communication and resets if no communication within watchdog period equal to Bandwidth time.
-      uint8_t bandwidth_limit_bits_{0};   
+      bool io_watchdog_enabled_{false}; // If enabled, chipset monitors I2C communication and resets if no communication within watchdog period equal to Bandwidth time.
+      uint8_t bandwidth_limit_bits_{0};
       bool notch_filter_enabled_{true};
       uint8_t rate_control_value_{0};     // Rate control value for sensor refresh rate. A divider of internal base rate (111Hz) in range 0-255. 0 means automatic selection which is 11 higher then Bandwidth limit.
       float calibration_offset_Pa_{0.0f}; // Calibration offset value in Pa, added to pressure readings. Could be stored as raw value but that would increase complexity.
@@ -97,7 +125,7 @@ namespace esphome
       std::string model_name_;
       std::string serial_number_;
       std::string serial_string_;
- 
+
       ///@brief Write 2 bytes of sensor settings (Mode register and Rate register) to the HVxxx sensor over I2C.
       bool write_sensor_settings_();
 
