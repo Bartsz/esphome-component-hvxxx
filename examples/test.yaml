@@ -1,7 +1,7 @@
 esphome:
   name: device1
-  friendly_name: 'HVAC Input Pressure Sensor HV210' 
-  name_add_mac_suffix: true
+  # friendly_name: 'HVAC Input Pressure Sensor HV210' 
+  # name_add_mac_suffix: true
   
 esp32:
   board: esp32-s3-devkitc1-n16r8

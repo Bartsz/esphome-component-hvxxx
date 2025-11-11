@@ -181,17 +181,17 @@ async def to_code(config):
         temperature = await sensor.new_sensor(config[CONF_TEMPERATURE])
         cg.add(var.set_temperature_sensor(temperature))
 
-    # model_name = base_name + " Model"
-    # model_ts_schema = text_sensor.text_sensor_schema()
-    # model_ts_conf = model_ts_schema({"name": model_name})
-    # model_ts = await text_sensor.new_text_sensor(model_ts_conf)
-    # cg.add(var.set_model_text_sensor(model_ts))
+    model_name = base_name + " Model"
+    model_ts_schema = text_sensor.text_sensor_schema()
+    model_ts_conf = model_ts_schema({"name": model_name})
+    model_ts = await text_sensor.new_text_sensor(model_ts_conf)
+    cg.add(var.set_model_text_sensor(model_ts))
 
-    # serial_name = base_name + " Serial"
-    # serial_ts_schema = text_sensor.text_sensor_schema()
-    # serial_ts_conf = serial_ts_schema({"name": serial_name})
-    # serial_ts = await text_sensor.new_text_sensor(serial_ts_conf)
-    # cg.add(var.set_serial_text_sensor(serial_ts))
+    serial_name = base_name + " Serial"
+    serial_ts_schema = text_sensor.text_sensor_schema()
+    serial_ts_conf = serial_ts_schema({"name": serial_name})
+    serial_ts = await text_sensor.new_text_sensor(serial_ts_conf)
+    cg.add(var.set_serial_text_sensor(serial_ts))
 
     # Pressure range bits and full-scale value (in inH2O)
     model_key = config[CONF_CHIP_MODEL]
@@ -223,9 +223,11 @@ async def to_code(config):
     )
 
     # Minimal config: just name; set behavior via C++ setters below
-    offset_conf = offset_schema({
-        "name": offset_number_name,
-    })
+    offset_conf = offset_schema(
+        {
+            "name": offset_number_name,
+        }
+    )
 
     # min/max/step define allowed range and UI slider granularity
     offset_number = await number.new_number(
