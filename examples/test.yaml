@@ -38,7 +38,7 @@ hvxxx:
   bandwidth_limit: 10hz 
   update_interval: 0.5s # Should be set to at least 3x bandwidth limit time period (e.g. 10hz -> 100ms -> 3x = 300ms)
   
-  pressure:
+  pressure: 
     name: "HVAC Input Pressure"
   
   temperature:    # if provided then temperature sensor is created and temperature readings are published

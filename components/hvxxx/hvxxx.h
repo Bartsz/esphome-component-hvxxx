@@ -17,7 +17,7 @@ namespace esphome
 
     class HVxxxComponent;
 
-    class HVxxxCalibrateButton : public button::Button
+    class HVxxxCalibrateButton : public button::Button, public Parented<HVxxxComponent>
     {
     public:
       void set_parent(HVxxxComponent *parent) { parent_ = parent; }

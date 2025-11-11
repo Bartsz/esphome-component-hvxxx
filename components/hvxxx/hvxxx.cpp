@@ -15,8 +15,14 @@ namespace esphome
 
     static const char *const TAG = "hvxxx";
 
+    void HVxxxCalibrateButton::press_action()
+    {
+      if (this->parent_ != nullptr)
+        this->parent_->calibrate_zero();
+    }
+
     void HVxxxComponent::setup()
-    { 
+    {
       set_timeout(this->first_response_settling_time_ - this->interface_detect_delay_, [this]()
                   { this->sensor_is_ready_ = true; });
 
@@ -103,12 +109,6 @@ namespace esphome
       {
         this->status_set_warning("communication failed");
       }
-    }
-
-    void HVxxxCalibrateButton::press_action()
-    {
-      if (this->parent_ != nullptr)
-        this->parent_->calibrate_zero();
     }
 
     void HVxxxComponent::calibrate_zero()
@@ -244,7 +244,7 @@ namespace esphome
       bool user_model_match = (this->model_name_ == this->requested_model_name_);
       if (!user_model_match)
       {
-        ESP_LOGE(TAG, "Sensor model mismatch: expected '%s', got '%s'. Please check wiring, I2C address, YAML configuration file and sensor.",
+        ESP_LOGE(TAG, "Sensor model mismatch: expected '%s', got '%s'. Check wiring, I2C address, YAML config and sensor model.",
                  this->requested_model_name_.c_str(), this->model_name_.c_str());
         this->mark_failed("Sensor model mismatch");
         return false;

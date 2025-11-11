@@ -16,9 +16,13 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["i2c"]
+AUTO_LOAD = ["number", "button", "template"]
 
 hvxxx_ns = cg.esphome_ns.namespace("hvxxx")
 HVxxxComponent = hvxxx_ns.class_("HVxxxComponent", cg.PollingComponent, i2c.I2CDevice)
+HVxxxCalibrateButton = hvxxx_ns.class_(
+    "HVxxxCalibrateButton", button.Button, cg.Parented
+)
 
 # Template number class for storing calibration offset
 template_ns = cg.esphome_ns.namespace("template_")
@@ -26,8 +30,6 @@ TemplateNumber = template_ns.class_(
     "TemplateNumber", number.Number, cg.PollingComponent
 )
 
-# Button to trigger calibration
-HVxxxCalibrateButton = hvxxx_ns.class_("HVxxxCalibrateButton", button.Button)
 
 CONF_ADDRESS = "address"
 CONF_PRESSURE = "pressure"
@@ -170,30 +172,16 @@ async def to_code(config):
     await cg.register_component(var, config)
     await i2c.register_i2c_device(var, config)
 
-    pressure = await sensor.new_sensor(config[CONF_PRESSURE])
-    cg.add(var.set_pressure_sensor(pressure))
+    pressure_sensor = await sensor.new_sensor(config[CONF_PRESSURE])
+    cg.add(var.set_pressure_sensor(pressure_sensor))
 
-    # Prefer explicit component name if provided, else pressure sensor name
-    base_name = config.get(CONF_NAME, config[CONF_PRESSURE]["name"])  # noqa: F821
     # Temperature sensor: only create if user set include_temperature: true
     # AND provided a temperature: block (so we have a name, etc.)
     if CONF_TEMPERATURE in config:
-        temperature = await sensor.new_sensor(config[CONF_TEMPERATURE])
-        cg.add(var.set_temperature_sensor(temperature))
+        temperature_sensor = await sensor.new_sensor(config[CONF_TEMPERATURE])
+        cg.add(var.set_temperature_sensor(temperature_sensor))
 
-    model_name = base_name + " Model"
-    model_ts_schema = text_sensor.text_sensor_schema()
-    model_ts_conf = model_ts_schema({"name": model_name})
-    model_ts = await text_sensor.new_text_sensor(model_ts_conf)
-    cg.add(var.set_model_text_sensor(model_ts))
-
-    serial_name = base_name + " Serial"
-    serial_ts_schema = text_sensor.text_sensor_schema()
-    serial_ts_conf = serial_ts_schema({"name": serial_name})
-    serial_ts = await text_sensor.new_text_sensor(serial_ts_conf)
-    cg.add(var.set_serial_text_sensor(serial_ts))
-
-    # Pressure range bits and full-scale value (in inH2O)
+    # Pressure range bits and full-scale value (in inH2O) based on model specifications
     model_key = config[CONF_CHIP_MODEL]
     range_key = config[CONF_PRESSURE_RANGE]
     range_bits = PRESSURE_RANGE_TO_BITS[model_key][range_key]
@@ -215,46 +203,40 @@ async def to_code(config):
     cg.add(var.set_bandwidth_mode_bits(BANDWIDTH_MODES[bandwidth_text_value]))
     cg.add(var.set_notch_filter_enabled(config.get(CONF_NOTCH, True)))
 
-    # Create calibration offset number for long-term storage
-    offset_number_name = base_name + " Calibration Offset"
+    ### PROBLEM HERE:   ERROR ID  is already registered ###
+    ### I CAN REGISTER ONLY ONE OF BELOW 4 OPTIONS ###
+    base_name = config.get(CONF_NAME, config[CONF_PRESSURE]["name"])
+
+    # Create zero-offset calibration number for long-term storage
     offset_schema = number.number_schema(
-        TemplateNumber,
-        entity_category=ENTITY_CATEGORY_CONFIG,
+        TemplateNumber, entity_category=ENTITY_CATEGORY_CONFIG
     )
-
-    # Minimal config: just name; set behavior via C++ setters below
-    offset_conf = offset_schema(
-        {
-            "name": offset_number_name,
-        }
+    offset_conf = offset_schema({"name": f"{base_name} Calibration Offset"})
+    offset_number_sensor = await number.new_number(
+        offset_conf, min_value=-2.5, max_value=2.5, step=0.01
     )
+    cg.add(offset_number_sensor.set_optimistic(True))
+    cg.add(offset_number_sensor.set_initial_value(0.0))
+    cg.add(offset_number_sensor.set_restore_value(True))
+    cg.add(var.set_offset_number(offset_number_sensor))
 
-    # min/max/step define allowed range and UI slider granularity
-    offset_number = await number.new_number(
-        offset_conf,
-        min_value=-2.5,
-        max_value=2.5,
-        step=0.01,
-    )
-
-    await cg.register_parented(offset_number, config[CONF_ID])
-    # Configure behavior on the C++ object directly
-    cg.add(offset_number.set_optimistic(True))
-    cg.add(offset_number.set_initial_value(0.0))
-    cg.add(offset_number.set_restore_value(True))
-    cg.add(var.set_offset_number(offset_number))
-
-    # Add a button to trigger zero-offset calibration
+    # Add a button to trigger zero-offset calibration -
     calibration_btn_schema = button.button_schema(
-        HVxxxCalibrateButton,
-        entity_category=ENTITY_CATEGORY_CONFIG,
+        HVxxxCalibrateButton, entity_category=ENTITY_CATEGORY_CONFIG
     )
-
     calibration_btn_conf = calibration_btn_schema({"name": f"Calibrate {base_name}"})
-
     calibration_btn = await button.new_button(calibration_btn_conf)
     await cg.register_parented(calibration_btn, config[CONF_ID])
-
-    # wire the button to the component
-    cg.add(calibration_btn.set_parent(var))
     cg.add(var.set_calibrate_button(calibration_btn))
+
+    # Text sensor reporting model retrieved from the device NOT defined in YAML 
+    model_ts_schema = text_sensor.text_sensor_schema()
+    model_ts_conf = model_ts_schema({"name": f"{base_name} Model"})
+    model_ts = await text_sensor.new_text_sensor(model_ts_conf)
+    cg.add(var.set_model_text_sensor(model_ts))
+
+    # Text sensor reporting serial number retrieved from the device NOT defined in YAML 
+    serial_ts_schema = text_sensor.text_sensor_schema()
+    serial_ts_conf = serial_ts_schema({"name": f"{base_name} Serial"})
+    serial_ts = await text_sensor.new_text_sensor(serial_ts_conf)
+    cg.add(var.set_serial_text_sensor(serial_ts))
