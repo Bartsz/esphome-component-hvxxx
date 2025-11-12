@@ -7,6 +7,7 @@ Features:
 - Calibration button
 """
 
+from logging import config
 import esphome.codegen as cg
 import esphome.config_validation as cv
 
@@ -31,8 +32,6 @@ from .sensor_parameters import (
     BANDWIDTH_MODES,
 )
 
-from .offset_number import *
-
 DEPENDENCIES = ["i2c"]
 
 AUTO_LOAD = [
@@ -41,8 +40,6 @@ AUTO_LOAD = [
     "text_sensor",
     "number",
     "button",
-    "template",
-    # "template.number",  # Use dot notation for Python module import
 ]
 
 hvxxx_ns = cg.esphome_ns.namespace("hvxxx")
@@ -51,17 +48,11 @@ HVxxxCalibrateButton = hvxxx_ns.class_(
     "HVxxxCalibrateButton", button.Button, cg.Parented
 )
 
-# Template number class for storing calibration offset
-# template_ns = cg.esphome_ns.namespace("template_")
-# TemplateNumber = hvxxx_ns.class_("TemplateNumber", number.Number, cg.PollingComponent)
-HVxxxOffsetNumber = hvxxx_ns.class_(
-    "HVxxxOffsetNumber", HVxxxOffsetNumber, cg.PollingComponent
-)
-
-
 CONF_ADDRESS = "address"
 CONF_PRESSURE = "pressure"
 CONF_TEMPERATURE = "temperature"
+CONF_OFFSET_NUMBER = "offset_value"
+
 CONF_CHIP_MODEL = "model"
 
 CONF_PRESSURE_RANGE = "pressure_range"
@@ -100,13 +91,6 @@ CONFIG_SCHEMA = (
             # Optional top-level naming helpers (not strictly required for operation)
             cv.Optional(CONF_NAME): cv.string,
             cv.Optional(CONF_FRIENDLY_NAME): cv.string,
-            cv.Required(CONF_PRESSURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_PASCAL,
-                icon=ICON_GAUGE,
-                accuracy_decimals=2,
-                device_class=DEVICE_CLASS_PRESSURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
             cv.Optional(CONF_TEMPERATURE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_CELSIUS,
                 icon=ICON_THERMOMETER,
@@ -130,7 +114,24 @@ async def to_code(config):
     await cg.register_component(var, config)
     await i2c.register_i2c_device(var, config)
 
-    pressure_sensor = await sensor.new_sensor(config[CONF_PRESSURE])
+    # if CONF_PRESSURE in config:
+    #     pressure_sensor = await sensor.new_sensor(config[CONF_PRESSURE])
+    #     cg.add(var.set_pressure_sensor(pressure_sensor))
+    # else:
+    pressure_sensor_schema = sensor.sensor_schema(
+        unit_of_measurement=UNIT_PASCAL,
+        icon=ICON_GAUGE,
+        accuracy_decimals=2,
+        device_class=DEVICE_CLASS_PRESSURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+    )
+    pressure_sensor_conf = pressure_sensor_schema(
+        {
+            cv.CONF_ID: f"{config[CONF_ID]}_pressure",
+            cv.CONF_NAME: f"{config.get(CONF_NAME, 'HVxxx')} Pressure",
+        }
+    )
+    pressure_sensor = await sensor.new_sensor(pressure_sensor_conf)
     cg.add(var.set_pressure_sensor(pressure_sensor))
 
     # Temperature sensor: only create if user set include_temperature: true
@@ -138,6 +139,25 @@ async def to_code(config):
     if CONF_TEMPERATURE in config:
         temperature_sensor = await sensor.new_sensor(config[CONF_TEMPERATURE])
         cg.add(var.set_temperature_sensor(temperature_sensor))
+
+    # Create offset number sensor based on defaults from  cv.Optional(CONF_OFFSET_NUMBER): sensor.sensor_schema(
+    # even if user did not provide an offset_number: block
+
+    offset_number_schema = sensor.sensor_schema(
+        unit_of_measurement=UNIT_PASCAL,
+        icon=ICON_GAUGE,
+        accuracy_decimals=2,
+        device_class=DEVICE_CLASS_PRESSURE,
+        state_class=STATE_CLASS_MEASUREMENT,
+    )
+    offset_number_conf = offset_number_schema(
+        {
+            cv.CONF_ID: f"{config[CONF_ID]}_offset_number",
+            cv.CONF_NAME: f"{config.get(CONF_NAME, 'HVxxx')} Offset",
+        }
+    )
+    offset_number_sensor = await sensor.new_sensor(offset_number_conf)
+    cg.add(var.set_offset_number_sensor(offset_number_sensor))
 
     # Pressure range bits and full-scale value (in inH2O) based on model specifications
     model_key = config[CONF_CHIP_MODEL]
@@ -161,36 +181,10 @@ async def to_code(config):
     cg.add(var.set_bandwidth_mode_bits(BANDWIDTH_MODES[bandwidth_text_value]))
     cg.add(var.set_notch_filter_enabled(config.get(CONF_NOTCH, True)))
 
-    ### PROBLEM HERE:   ERROR ID  is already registered ###
-    ### I CAN REGISTER ONLY ONE OF BELOW 4 OPTIONS ###
     # Get the base name from the component's name or the pressure sensor's name.
-    base_name = config.get(CONF_NAME, config[CONF_PRESSURE]["name"])
+    base_name = config[CONF_NAME]
     # Get the main component's ID to create unique IDs for sub-entities.
     base_id = str(config[CONF_ID])
-
-    # Create zero-offset calibration number for long-term storage
-    offset_schema = number.number_schema(
-        HVxxxOffsetNumber,
-        unit_of_measurement=UNIT_PASCAL,
-        icon=ICON_GAUGE,
-        # class_=STATE_CLASS_MEASUREMENT,
-        # accuracy_decimals=2, # why doesn't this work?
-        device_class=DEVICE_CLASS_PRESSURE,
-        # entity_category=ENTITY_CATEGORY_CONFIG
-    )
-    offset_conf = offset_schema(
-        {
-            cv.CONF_ID: f"{base_id}_calibration_offset",
-            "name": f"{base_name} Calibration Offset",
-        }
-    )
-    offset_number_sensor = await number.new_number(
-        offset_conf, min_value=-2.5, max_value=2.5, step=0.01
-    )
-    cg.add(offset_number_sensor.set_optimistic(True))
-    cg.add(offset_number_sensor.set_initial_value(0.0))
-    cg.add(offset_number_sensor.set_restore_value(True))
-    cg.add(var.set_offset_number(offset_number_sensor))
 
     # Add a button to trigger zero-offset calibration
     calibration_btn_schema = button.button_schema(
@@ -207,6 +201,8 @@ async def to_code(config):
     calibration_btn = await button.new_button(calibration_btn_conf)
     await cg.register_parented(calibration_btn, config[CONF_ID])
     cg.add(var.set_calibrate_button(calibration_btn))
+
+    # Create zero-offset calibration number for long-term storage
 
     # Text sensor reporting model retrieved from the device NOT defined in YAML
     model_ts_conf = text_sensor.text_sensor_schema()(

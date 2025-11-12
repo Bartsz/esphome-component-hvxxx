@@ -14,64 +14,6 @@ namespace esphome
   {
     static const char *const TAG = "hvxxx";
 
-    void HVxxxOffsetNumber::setup()
-    {
-      if (this->f_.has_value())
-        return;
-
-      float value;
-      if (!this->restore_value_)
-      {
-        value = this->initial_value_;
-      }
-      else
-      {
-        this->pref_ = global_preferences->make_preference<float>(this->get_preference_hash());
-        if (!this->pref_.load(&value))
-        {
-          if (!std::isnan(this->initial_value_))
-          {
-            value = this->initial_value_;
-          }
-          else
-          {
-            value = this->traits.get_min_value();
-          }
-        }
-      }
-      this->publish_state(value);
-    }
-
-    void HVxxxOffsetNumber::update()
-    {
-      if (!this->f_.has_value())
-        return;
-
-      auto val = (*this->f_)();
-      if (!val.has_value())
-        return;
-
-      this->publish_state(*val);
-    }
-
-    void HVxxxOffsetNumber::control(float value)
-    {
-      this->set_trigger_->trigger(value);
-
-      if (this->optimistic_)
-        this->publish_state(value);
-
-      if (this->restore_value_)
-        this->pref_.save(&value);
-    }
-    void HVxxxOffsetNumber::dump_config()
-    {
-      LOG_NUMBER("", "Offset Number", this);
-      ESP_LOGCONFIG(TAG, "  Optimistic: %s", YESNO(this->optimistic_));
-      LOG_UPDATE_INTERVAL(this);
-    }
-
-
     void HVxxxCalibrateButton::press_action()
     {
       if (this->parent_ != nullptr)
@@ -110,9 +52,9 @@ namespace esphome
                       this->mark_failed("I2C communication failed when reading model and serial during setup");
                     } });
 
-      if (this->offset_number_ != nullptr && this->offset_number_->has_state())
+      if (this->offset_number_sensor_ != nullptr && this->offset_number_sensor_->has_state())
       {
-        this->calibration_offset_Pa_ = this->offset_number_->state;
+        this->calibration_offset_Pa_ = this->offset_number_sensor_->state;
         ESP_LOGCONFIG(TAG, "Restored calibration offset: %.3f Pa", this->calibration_offset_Pa_);
       }
     }
@@ -174,11 +116,14 @@ namespace esphome
       this->read_sensor_data_(buffer, 2);
       float pressure_Pa = this->parse_pressure_(buffer);
       if (!std::isnan(pressure_Pa))
-        this->calibration_offset_Pa_ = -pressure_Pa;
-
-      if (this->offset_number_ != nullptr)
       {
-        this->offset_number_->publish_state(this->calibration_offset_Pa_);
+        this->calibration_offset_Pa_ = -pressure_Pa;
+        this->pref_.save(&this->calibration_offset_Pa_);
+      }
+
+      if (this->offset_number_sensor_ != nullptr)
+      {
+        this->offset_number_sensor_->publish_state(this->calibration_offset_Pa_);
       }
     }
 
@@ -330,5 +275,16 @@ namespace esphome
       return true;
     }
 
+    void HVxxxComponent::restore_value_()
+    {
+      this->calibration_offset_Pa_ = 0;
+      float value = 0.0;
+
+      this->pref_ = global_preferences->make_preference<float>(this->offset_number_sensor_->get_preference_hash());
+      if (!this->pref_.load(&value))
+        return;
+
+      this->calibration_offset_Pa_ = value;
+    }
   } // namespace hvxxx
 } // namespace esphome

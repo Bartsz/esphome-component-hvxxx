@@ -9,13 +9,13 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/i2c/i2c.h"
 #include "esphome/components/button/button.h"
-#include "esphome/components/number/number.h" 
-// #include "/offset_number/offset_number.h"  # this didn't work, even though VS Code can navigate there
+#include "esphome/components/number/number.h"
+// #include "/offset_number/offset_number.h"
 
 namespace esphome
 {
   namespace hvxxx
-  { 
+  {
 
     class HVxxxComponent;
 
@@ -66,10 +66,13 @@ namespace esphome
       void set_model_text_sensor(text_sensor::TextSensor *model) { model_text_sensor_ = model; }
       void set_serial_text_sensor(text_sensor::TextSensor *serial) { serial_text_sensor_ = serial; }
 
-      // Calibration
-      //  zero offset number from TemplateNumber (persistent with restore_value=true)
-      void set_offset_number(HVxxxOffsetNumber *number) { offset_number_ = number; }
+      // Calibration 
+      void set_offset_number_sensor(sensor::Sensor *number) { offset_number_sensor_ = number; }
       void set_calibrate_button(HVxxxCalibrateButton *button) { calibrate_button_ = button; }
+
+      //test
+      void set_offset_number(number::Number *number) { number_ = number; }
+
 
       /// @brief Starts zero pressure offset calibration process
       void calibrate_zero();
@@ -103,8 +106,12 @@ namespace esphome
       sensor::Sensor *temperature_sensor_{nullptr};
       text_sensor::TextSensor *model_text_sensor_{nullptr};
       text_sensor::TextSensor *serial_text_sensor_{nullptr};
-      HVxxxOffsetNumber *offset_number_{nullptr};
+      sensor::Sensor *offset_number_sensor_{nullptr};
       HVxxxCalibrateButton *calibrate_button_{nullptr};
+
+      number::Number *number_{nullptr};
+
+      ESPPreferenceObject pref_;
 
       // Sensor settings
       uint8_t pressure_range_bits_{0};
@@ -126,6 +133,8 @@ namespace esphome
       std::string serial_number_;
       std::string serial_string_;
 
+      ///@brief Restore calibration offset value from persistent storage.
+      void restore_value_();
       ///@brief Write 2 bytes of sensor settings (Mode register and Rate register) to the HVxxx sensor over I2C.
       bool write_sensor_settings_();
 

@@ -1,5 +1,5 @@
 esphome:
-  name: device1
+  name: device3
   # friendly_name: 'HVAC Input Pressure Sensor HV210' 
   # name_add_mac_suffix: true
   
@@ -34,14 +34,10 @@ sensor:
 
     i2c_id: bus_a 
     address: 0x28  # I2C address of the sensor; default is usually 0x28
-    model: HV210  # Model is the chip family; used for validation & C++ model check
+    model: HV210  # Model in the chip family; used for validation & C++ model check
     pressure_range: 1inh2o 
     bandwidth_limit: 10hz 
-    update_interval: 0.5s # Should be set to at least 3x bandwidth limit time period (e.g. 10hz -> 100ms -> 3x = 300ms)
-     
-    pressure: 
-      id: hvac_input_pressure
-      name: "HVAC Input Pressure"
+    update_interval: 0.5s # Should be set to at least 3x time period of bandwidth limit (e.g. 10hz -> 100ms -> 3x = 300ms)
     
     temperature:    # If provided then temperature sensor is created and temperature readings are published
       id: hvac_input_temperature
