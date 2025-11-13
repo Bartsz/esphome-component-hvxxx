@@ -51,6 +51,7 @@ HVxxxCalibrateButton = hvxxx_ns.class_(
 CONF_ADDRESS = "address"
 CONF_PRESSURE = "pressure"
 CONF_TEMPERATURE = "temperature"
+CONF_ENABLE_TEMPERATURE = "enable_temperature_reading"
 CONF_OFFSET_NUMBER = "offset_value"
 
 CONF_CHIP_MODEL = "model"
@@ -88,16 +89,9 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_NOTCH, default=True): cv.boolean,
             cv.Optional(CONF_IO_WATCHDOG, default=False): cv.boolean,
             cv.Optional(CONF_RATE_CONTROL, default=0): cv.int_range(min=0, max=255),
-            # Optional top-level naming helpers (not strictly required for operation)
             cv.Optional(CONF_NAME): cv.string,
             cv.Optional(CONF_FRIENDLY_NAME): cv.string,
-            cv.Optional(CONF_TEMPERATURE): sensor.sensor_schema(
-                unit_of_measurement=UNIT_CELSIUS,
-                icon=ICON_THERMOMETER,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_TEMPERATURE,
-                state_class=STATE_CLASS_MEASUREMENT,
-            ),
+            cv.Optional(CONF_ENABLE_TEMPERATURE, default=False): cv.boolean,
         }
     )
     # update_interval is used to derive the Rate Control register (refresh rate)
@@ -134,15 +128,26 @@ async def to_code(config):
     pressure_sensor = await sensor.new_sensor(pressure_sensor_conf)
     cg.add(var.set_pressure_sensor(pressure_sensor))
 
-    # Temperature sensor: only create if user set include_temperature: true
+    # Temperature sensor: only create if user set enable_temperature_reading: true
     # AND provided a temperature: block (so we have a name, etc.)
-    if CONF_TEMPERATURE in config:
-        temperature_sensor = await sensor.new_sensor(config[CONF_TEMPERATURE])
-        cg.add(var.set_temperature_sensor(temperature_sensor))
+    if CONF_ENABLE_TEMPERATURE in config and config[CONF_ENABLE_TEMPERATURE]:
+        temp_sensor_schema = sensor.sensor_schema(
+            unit_of_measurement=UNIT_CELSIUS,
+            icon=ICON_THERMOMETER,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_TEMPERATURE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        )
+        temp_sensor_conf = temp_sensor_schema(
+            {
+                cv.CONF_ID: f"{config[CONF_ID]}_temperature",
+                cv.CONF_NAME: f"{config.get(CONF_NAME, 'HVxxx')} Temperature",
+            }
+        )
+        temp_sensor = await sensor.new_sensor(temp_sensor_conf)
+        cg.add(var.set_temperature_sensor(temp_sensor))
 
-    # Create offset number sensor based on defaults from  cv.Optional(CONF_OFFSET_NUMBER): sensor.sensor_schema(
-    # even if user did not provide an offset_number: block
-
+    # Create calibration offset number sensor - NOT defined in YAML
     offset_number_schema = sensor.sensor_schema(
         unit_of_measurement=UNIT_PASCAL,
         icon=ICON_GAUGE,
@@ -186,32 +191,14 @@ async def to_code(config):
     # Get the main component's ID to create unique IDs for sub-entities.
     base_id = str(config[CONF_ID])
 
-    # Add a button to trigger zero-offset calibration
-    calibration_btn_schema = button.button_schema(
-        HVxxxCalibrateButton,
-        device_class=button.DEVICE_CLASS_RESTART,
-        entity_category=ENTITY_CATEGORY_CONFIG,
-    )
-    calibration_btn_conf = calibration_btn_schema(
-        {
-            cv.CONF_ID: f"{base_id}_calibrate_button",
-            "name": f"Calibrate {base_name}",
-        }
-    )
-    calibration_btn = await button.new_button(calibration_btn_conf)
-    await cg.register_parented(calibration_btn, config[CONF_ID])
-    cg.add(var.set_calibrate_button(calibration_btn))
-
-    # Create zero-offset calibration number for long-term storage
-
-    # Text sensor reporting model retrieved from the device NOT defined in YAML
+    # Text sensor reporting model retrieved from the device - NOT defined in YAML
     model_ts_conf = text_sensor.text_sensor_schema()(
         {cv.CONF_ID: f"{base_id}_model", "name": f"{base_name} Model"}
     )
     model_ts = await text_sensor.new_text_sensor(model_ts_conf)
     cg.add(var.set_model_text_sensor(model_ts))
 
-    # Text sensor reporting serial number retrieved from the device NOT defined in YAML
+    # Text sensor reporting serial number retrieved from the device - NOT defined in YAML
     serial_ts_conf = text_sensor.text_sensor_schema()(
         {cv.CONF_ID: f"{base_id}_serial", "name": f"{base_name} Serial"}
     )
